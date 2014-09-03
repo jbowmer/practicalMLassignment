@@ -1,0 +1,118 @@
+---
+title: "PracticalML model"
+author: "jbowmer"
+date: "2 September 2014"
+output: html_document
+---
+
+#Synopsis
+This document outlines the steps taken predict whether the exercise was performed in the correct manner or not.
+
+#Reading in the data
+```{r}
+
+setwd("/Users/Jake/R/PracticalML")
+library(ggplot2)
+library(caret)
+library(dplyr)
+
+#training data
+urlTrain = "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+trainCSV = download.file(urlTrain, "train.csv")
+training = read.csv("train.csv", stringsAsFactors = FALSE)
+
+training$classe = as.factor(training$classe)
+
+
+#test data
+urlTest = "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+testCSV = download.file(urlTest, "test.csv")
+testing = read.csv("test.csv", stringsAsFactors = FALSE)
+testing$problem_id = as.factor(testing$problem_id)
+
+```
+
+#Create a clean dataset that contains the data we need to predict classes.
+
+The "classe" variable is the last variable in the dataset and has 5 levels, ABCDE. Class A indicates the correct technique.
+
+
+```{r}
+#Further split testing data for cross validation purposes:
+split = createDataPartition(training$X, p = 0.7, list = FALSE)
+preTraining = training[split,]
+trainValidation = training[-split,]
+
+#remove first 7 columns from preTraining
+
+preTraining = preTraining[preTraining$new_window == "no", ]
+preTraining = preTraining[, 7:160]
+
+
+#remove non zero variance variables.
+nonZero = nearZeroVar(preTraining, saveMetrics = TRUE)
+
+#remove these from the data set
+goodvars = row.names(nonZero[nonZero$nzv == FALSE,])
+
+preTraining = preTraining[, goodvars]
+```
+
+#Some quick data analysis
+
+```{r}
+#Are classe outcomes relatively balanced?
+
+ggplot(aes(x = classe), data = preTraining) + geom_histogram() +
+  ggtitle("Are Classe Outcomes balanced?")
+
+  
+#Summary stats  
+summary(preTraining)
+
+```
+
+
+#Fit a random forest model.
+
+```{r}
+#Random forest models perform well in classification tasks such as this.
+
+modFit = train(classe ~ ., data = preTraining, method = "rf",
+               trControl = trainControl(method = "cv",
+                                        number = 3,
+                                        allowParallel = TRUE))
+
+```
+
+
+```{r}
+#Apply to holdout data, trainValidation
+
+pred = predict(modFit, trainValidation)
+
+#Turns out correct technique is reasonable common and classes are reasonably balanced. 
+#Accuracy is therefore a reasonable measure of performance for any model.
+
+confusionMatrix(pred, trainValidation$classe)
+
+```
+
+Classification accuracy as per the table is 99%. This is calculated on the hold out set from the initial training data. As I believe the model to be properly specified with appropriate variables, I expect similar performance on the testing set.
+
+#Apply model to initial testing data and write answers to files.
+
+```{r}
+
+finalPred = predict(modFit, testing)
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i], file = filename, quote = FALSE,
+                row.names = FALSE, col.names = FALSE)
+  }
+}
+pml_write_files(finalPred)
+
